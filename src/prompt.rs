@@ -1,4 +1,10 @@
-const DEFAULT_SYSTEM: &str = "You are an expert developer. Review the git status, changed files, file contents, and diff. Write a concise commit message following Conventional Commits (e.g. feat(auth): add JWT validation). Output ONLY the raw commit message — no markdown, no explanation.";
+const DEFAULT_SYSTEM: &str = "\
+Write a git commit message with a subject line and an optional body. \
+Subject: max 30 words, Conventional Commits (e.g. refactor(pkg): rename namespace). \
+Body: optional, max 100 words, plain text only. \
+Separate subject and body with one blank line. \
+No markdown, no bullets, no headings, no code fences. \
+Output ONLY the raw commit message.";
 
 pub struct CommitContext<'a> {
     pub status: &'a str,
@@ -50,6 +56,7 @@ pub fn build_messages(
     }
     user.push_str("Staged diff:\n");
     user.push_str(ctx.diff);
+    user.push_str("\n\nReply with subject (max 30 words) and optional body (max 100 words).\n");
     (system, user)
 }
 

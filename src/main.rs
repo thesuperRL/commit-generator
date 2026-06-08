@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         args.api_key.as_deref(),
         args.base_url.as_deref(),
     )?;
-    let message = llm::complete(&cfg.base_url, &cfg.api_key, &cfg.model, &system, &user).await?;
+    let message = llm::generate(&cfg.base_url, &cfg.api_key, &cfg.model, &system, &user).await?;
     eprintln!("Suggested commit message:\n{message}\n");
     if args.dry_run {
         print!("{message}");
