@@ -8,7 +8,7 @@ const SKIP_NAMES: &[&str] = &[
     "poetry.lock",
 ];
 
-fn should_skip(path: &str) -> bool {
+pub fn skip_path(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
     if SKIP_NAMES.contains(&name) {
         return true;
@@ -35,7 +35,7 @@ pub fn clean(diff: &str) -> String {
                 .next()
                 .and_then(|p| p.strip_prefix("a/"))
                 .unwrap_or(rest);
-            keep = !should_skip(path);
+            keep = !skip_path(path);
         }
         if keep {
             out.push_str(line);

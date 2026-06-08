@@ -65,7 +65,7 @@ git aicommit --prompt ./commit-style.txt
 
 ## How it works
 
-1. Reads `git diff --staged`
-2. Strips lockfiles, binaries, and oversized diffs
+1. Reads `git status`, changed file list, repo context files (README, manifests, neighbors), staged file contents, and `git diff --staged`
+2. Strips lockfiles, binaries, and oversized content
 3. Sends diff + recent commit subjects to the LLM
 4. Opens `git commit -e -F` with the suggested message pre-filled
