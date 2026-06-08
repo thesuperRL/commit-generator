@@ -1,0 +1,57 @@
+mod config;
+mod diff;
+mod git;
+mod llm;
+mod prompt;
+
+use anyhow::Result;
+use clap::Parser;
+use std::io::Write;
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(name = "git-aicommit", about = "AI-generated git commit messages")]
+struct Args {
+    #[arg(long, env = "AICOMMIT_PROVIDER", default_value = "openrouter")]
+    provider: String,
+    #[arg(short, long, env = "AICOMMIT_MODEL")]
+    model: Option<String>,
+    #[arg(long, env = "AICOMMIT_API_KEY")]
+    api_key: Option<String>,
+    #[arg(long, env = "AICOMMIT_BASE_URL")]
+    base_url: Option<String>,
+    #[arg(short, long)]
+    prompt: Option<PathBuf>,
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let _ = dotenvy::dotenv();
+    let args = Args::parse();
+    git::ensure_repo()?;
+    let diff = diff::clean(&git::staged_diff()?);
+    let recent = git::recent_subjects(5)?;
+    let custom = match args.prompt.as_ref() {
+        Some(path) => Some(std::fs::read_to_string(path)?.trim().to_string()),
+        None => None,
+    };
+    let (system, user) = prompt::build_messages(&diff, &recent, custom.as_deref());
+    let cfg = config::Config::from_args(
+        &args.provider,
+        args.model.as_deref(),
+        args.api_key.as_deref(),
+        args.base_url.as_deref(),
+    )?;
+    let message = llm::complete(&cfg.base_url, &cfg.api_key, &cfg.model, &system, &user).await?;
+    eprintln!("Suggested commit message:\n{message}\n");
+    if args.dry_run {
+        print!("{message}");
+        return Ok(());
+    }
+    let mut file = tempfile::NamedTempFile::new()?;
+    write!(file, "{message}")?;
+    git::commit_with_editor(file.path())?;
+    Ok(())
+}
