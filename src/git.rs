@@ -43,6 +43,18 @@ pub fn recent_subjects(n: usize) -> Result<Vec<String>> {
         .collect())
 }
 
+pub fn commit(message: &str) -> Result<()> {
+    let status = Command::new("git")
+        .args(["commit", "-m"])
+        .arg(message)
+        .status()
+        .context("failed to run git commit")?;
+    if !status.success() {
+        bail!("git commit failed");
+    }
+    Ok(())
+}
+
 pub fn commit_with_editor(message_path: &Path) -> Result<()> {
     let status = Command::new("git")
         .args(["commit", "-e", "-F"])

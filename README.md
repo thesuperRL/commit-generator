@@ -17,11 +17,15 @@ git aicommit
 
 ## Setup
 
-Copy `.env.example` to `.env` and add your OpenRouter key:
+Copy `.env.example` to `~/.config/git-aicommit/.env` (used from any repo):
 
 ```bash
-cp .env.example .env
+mkdir -p ~/.config/git-aicommit
+cp .env.example ~/.config/git-aicommit/.env
+# edit and add your OPENROUTER_API_KEY
 ```
+
+You can also add a project-local `.env` in a repo to override settings.
 
 Defaults (via `.env` or env vars):
 
@@ -31,13 +35,15 @@ Defaults (via `.env` or env vars):
 | Model | `google/gemma-4-31b-it:free` |
 | API key | `OPENROUTER_API_KEY` from [OpenRouter](https://openrouter.ai) |
 
-The tool loads `.env` from the current directory automatically.
+The tool loads `~/.config/git-aicommit/.env` first, then `.env` in the current directory.
 
 ## Usage
 
 ```bash
 git add .
 git aicommit              # opens editor with suggested message
+git aicommit --fast       # commit immediately, no editor
+git aicommit -f           # same as --fast
 git aicommit --dry-run    # print message only, no commit
 git aicommit --provider gemini   # switch to Gemini instead
 git aicommit --prompt ./commit-style.txt
@@ -53,6 +59,7 @@ git aicommit --prompt ./commit-style.txt
 | `--base-url` | `AICOMMIT_BASE_URL` | Override API base URL |
 | `--prompt FILE` | — | Extra instructions appended to system prompt |
 | `--dry-run` | — | Print message, skip editor/commit |
+| `--fast`, `-f` | — | Commit immediately without opening editor |
 
 ## How it works
 

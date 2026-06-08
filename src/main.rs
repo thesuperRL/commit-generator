@@ -1,5 +1,6 @@
 mod config;
 mod diff;
+mod env;
 mod git;
 mod llm;
 mod prompt;
@@ -24,11 +25,13 @@ struct Args {
     prompt: Option<PathBuf>,
     #[arg(long)]
     dry_run: bool,
+    #[arg(long, short = 'f', conflicts_with = "dry_run")]
+    fast: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = dotenvy::dotenv();
+    env::load();
     let args = Args::parse();
     git::ensure_repo()?;
     let diff = diff::clean(&git::staged_diff()?);
@@ -48,6 +51,10 @@ async fn main() -> Result<()> {
     eprintln!("Suggested commit message:\n{message}\n");
     if args.dry_run {
         print!("{message}");
+        return Ok(());
+    }
+    if args.fast {
+        git::commit(&message)?;
         return Ok(());
     }
     let mut file = tempfile::NamedTempFile::new()?;
