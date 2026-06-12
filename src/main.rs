@@ -27,6 +27,8 @@ struct Args {
     dry_run: bool,
     #[arg(long, short = 'f', conflicts_with = "dry_run")]
     fast: bool,
+    #[arg(long, short = 'r', help = "Retry on errors until a valid message is generated")]
+    retry_forever: bool,
 }
 
 #[tokio::main]
@@ -62,7 +64,15 @@ async fn main() -> Result<()> {
         args.api_key.as_deref(),
         args.base_url.as_deref(),
     )?;
-    let message = llm::generate(&cfg.base_url, &cfg.api_key, &cfg.model, &system, &user).await?;
+    let message = llm::generate(
+        &cfg.base_url,
+        &cfg.api_key,
+        &cfg.model,
+        &system,
+        &user,
+        args.retry_forever,
+    )
+    .await?;
     eprintln!("Suggested commit message:\n{message}\n");
     if args.dry_run {
         print!("{message}");

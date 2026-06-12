@@ -40,28 +40,57 @@ pub async fn generate(
     model: &str,
     system: &str,
     user: &str,
+    retry_forever: bool,
 ) -> Result<String> {
     let mut user_prompt = user.to_string();
     let mut last_issue = String::new();
+    let mut attempt = 0u64;
 
-    for attempt in 1..=MAX_ATTEMPTS {
-        let raw = complete_once(base_url, api_key, model, system, &user_prompt).await?;
+    loop {
+        attempt += 1;
+        if !retry_forever && attempt > MAX_ATTEMPTS as u64 {
+            bail!("failed after {MAX_ATTEMPTS} attempts: {last_issue}");
+        }
+
+        let raw = match complete_once(base_url, api_key, model, system, &user_prompt).await {
+            Ok(raw) => raw,
+            Err(e) => {
+                last_issue = error_summary(&e);
+                if retry_forever {
+                    eprintln!("retry {attempt}: {last_issue}");
+                    continue;
+                }
+                return Err(e);
+            }
+        };
+
         match validate(&raw) {
             Ok(message) => return Ok(message),
             Err(issue) => {
-                last_issue = issue;
-                if attempt == MAX_ATTEMPTS {
-                    bail!("failed after {MAX_ATTEMPTS} attempts: {last_issue}");
+                last_issue = issue.clone();
+                if retry_forever {
+                    eprintln!("retry {attempt}: validation: {issue}");
                 }
                 user_prompt.push_str(&format!(
-                    "\n\nPrevious attempt rejected ({last_issue}). \
+                    "\n\nPrevious attempt rejected ({issue}). \
                      Reply again: subject max {MAX_SUBJECT_WORDS} words, optional body max {MAX_BODY_WORDS} words.\n"
                 ));
             }
         }
     }
+}
 
-    bail!("failed after {MAX_ATTEMPTS} attempts: {last_issue}")
+fn error_summary(err: &anyhow::Error) -> String {
+    one_line(&err.to_string())
+}
+
+fn one_line(s: &str) -> String {
+    let line = s.lines().next().unwrap_or(s).trim();
+    if line.len() > 120 {
+        format!("{}...", &line[..117])
+    } else {
+        line.to_string()
+    }
 }
 
 async fn complete_once(

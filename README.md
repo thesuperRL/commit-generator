@@ -49,6 +49,8 @@ git aicommit -f           # same as --fast
 git aicommit --dry-run    # print message only, no commit
 git aicommit --provider gemini   # switch to Gemini instead
 git aicommit --prompt ./commit-style.txt
+git aicommit --retry-forever   # keep retrying on rate limits / errors
+git aicommit -r                # same as --retry-forever
 ```
 
 ### Options
@@ -62,6 +64,7 @@ git aicommit --prompt ./commit-style.txt
 | `--prompt FILE` | — | Extra instructions appended to system prompt |
 | `--dry-run` | — | Print message, skip editor/commit |
 | `--fast`, `-f` | — | Commit immediately without opening editor |
+| `--retry-forever`, `-r` | — | Retry on API or validation errors until success |
 
 ## How it works
 
