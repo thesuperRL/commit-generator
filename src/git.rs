@@ -159,6 +159,104 @@ pub fn repo_context_files(staged_paths: &[String], max_chars: usize) -> Result<S
     Ok(out)
 }
 
+pub fn last_commit_context(max_chars: usize) -> Result<String> {
+    let head_ok = Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .output()
+        .context("failed to run git rev-parse")?
+        .status
+        .success();
+    if !head_ok {
+        return Ok(String::new());
+    }
+
+    let mut out = String::new();
+
+    if let Ok(message) = git_output(&["log", "-1", "--format=%B"]) {
+        let message = message.trim();
+        if !message.is_empty() {
+            out.push_str("Previous commit message:\n");
+            out.push_str(message);
+            out.push('\n');
+        }
+    }
+
+    let name_status = git_output(&["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"])
+        .unwrap_or_default();
+    if !name_status.trim().is_empty() {
+        out.push('\n');
+        out.push_str("Previous commit changed files:\n");
+        out.push_str(name_status.trim_end());
+        out.push('\n');
+    }
+
+    let files = last_commit_file_contents(max_chars.saturating_sub(out.len()))?;
+    if !files.is_empty() {
+        out.push('\n');
+        out.push_str("Previous commit file contents:\n");
+        out.push_str(&files);
+    }
+
+    if let Ok(diff) = git_output(&["show", "HEAD", "--format=", "--patch"]) {
+        let diff = crate::diff::clean(&diff);
+        if !diff.trim().is_empty() {
+            out.push('\n');
+            out.push_str("Previous commit diff:\n");
+            let remaining = max_chars.saturating_sub(out.len());
+            if diff.len() > remaining {
+                let mut end = remaining;
+                while end > 0 && !diff.is_char_boundary(end) {
+                    end -= 1;
+                }
+                out.push_str(&diff[..end]);
+                out.push_str("\n... [previous commit diff truncated]\n");
+            } else {
+                out.push_str(&diff);
+            }
+        }
+    }
+
+    if out.len() > max_chars {
+        let mut end = max_chars;
+        while end > 0 && !out.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.truncate(end);
+        out.push_str("\n... [previous commit context truncated]\n");
+    }
+
+    Ok(out)
+}
+
+fn last_commit_file_contents(max_chars: usize) -> Result<String> {
+    let status =
+        git_output(&["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"])?;
+    let mut out = String::new();
+    for line in status.lines() {
+        if out.len() >= max_chars {
+            out.push_str("... [previous commit file contents truncated]\n");
+            break;
+        }
+        let Some((tag, path)) = line.split_once('\t') else {
+            continue;
+        };
+        if tag.chars().any(|c| c == 'D') {
+            continue;
+        }
+        let path = path.rsplit(" -> ").next().unwrap_or(path);
+        if crate::diff::skip_path(path) {
+            continue;
+        }
+        let Some(text) = read_git_file(path, false) else {
+            continue;
+        };
+        if append_file(&mut out, path, &text, max_chars) {
+            break;
+        }
+    }
+    Ok(out)
+}
+
 pub fn recent_subjects(n: usize) -> Result<Vec<String>> {
     let out = Command::new("git")
         .args(["log", &format!("-{n}"), "--format=%s"])

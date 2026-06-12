@@ -29,6 +29,8 @@ struct Args {
     fast: bool,
     #[arg(long, short = 'r', help = "Retry on errors until a valid message is generated")]
     retry_forever: bool,
+    #[arg(long, short = 'c', help = "Include the previous commit's contents as context")]
+    context: bool,
 }
 
 #[tokio::main]
@@ -42,6 +44,11 @@ async fn main() -> Result<()> {
     let name_status = git::staged_name_status().unwrap_or_default();
     let repo_files = git::repo_context_files(&staged_paths, 4_000).unwrap_or_default();
     let files = git::staged_file_contents(6_000).unwrap_or_default();
+    let last_commit = if args.context {
+        git::last_commit_context(6_000).unwrap_or_default()
+    } else {
+        String::new()
+    };
     let recent = git::recent_subjects(5)?;
     let custom = match args.prompt.as_ref() {
         Some(path) => Some(std::fs::read_to_string(path)?.trim().to_string()),
@@ -54,6 +61,7 @@ async fn main() -> Result<()> {
             repo_files: &repo_files,
             files: &files,
             diff: &diff,
+            last_commit: &last_commit,
         },
         &recent,
         custom.as_deref(),

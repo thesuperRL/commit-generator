@@ -51,6 +51,7 @@ git aicommit --provider gemini   # switch to Gemini instead
 git aicommit --prompt ./commit-style.txt
 git aicommit --retry-forever   # keep retrying on rate limits / errors
 git aicommit -r                # same as --retry-forever
+git aicommit -c                # include previous commit as context
 ```
 
 ### Options
@@ -65,6 +66,7 @@ git aicommit -r                # same as --retry-forever
 | `--dry-run` | — | Print message, skip editor/commit |
 | `--fast`, `-f` | — | Commit immediately without opening editor |
 | `--retry-forever`, `-r` | — | Retry on API or validation errors until success |
+| `--context`, `-c` | — | Include previous commit message, files, and diff |
 
 ## How it works
 

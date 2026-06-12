@@ -12,6 +12,7 @@ pub struct CommitContext<'a> {
     pub repo_files: &'a str,
     pub files: &'a str,
     pub diff: &'a str,
+    pub last_commit: &'a str,
 }
 
 pub fn build_messages(
@@ -32,6 +33,11 @@ pub fn build_messages(
             user.push_str(subject);
             user.push('\n');
         }
+        user.push('\n');
+    }
+    if !ctx.last_commit.is_empty() {
+        user.push_str("Last commit context:\n");
+        user.push_str(ctx.last_commit);
         user.push('\n');
     }
     if !ctx.status.is_empty() {
@@ -72,6 +78,7 @@ mod tests {
             repo_files: "--- README.md ---\n# App\n",
             files: "--- src/main.rs ---\nfn main() {}\n",
             diff: "+change",
+            last_commit: "",
         };
         let (_, user) = build_messages(ctx, &["feat: init".into()], None);
         assert!(user.contains("feat: init"));
@@ -80,5 +87,20 @@ mod tests {
         assert!(user.contains("Repo context files:"));
         assert!(user.contains("Staged file contents:"));
         assert!(user.contains("Staged diff:"));
+    }
+
+    #[test]
+    fn includes_last_commit_context() {
+        let ctx = CommitContext {
+            status: "",
+            name_status: "",
+            repo_files: "",
+            files: "",
+            diff: "+change",
+            last_commit: "Previous commit message:\nfeat: init\n",
+        };
+        let (_, user) = build_messages(ctx, &[], None);
+        assert!(user.contains("Last commit context:"));
+        assert!(user.contains("feat: init"));
     }
 }
