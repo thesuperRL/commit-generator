@@ -182,9 +182,37 @@ async fn fetch_free_fallback_models(base_url: &str, api_key: &str) -> Result<Vec
         .filter(|m| is_free_fallback(&m.id, &m.pricing))
         .map(|m| m.id)
         .collect();
-    models.sort();
+    models.sort_by_cached_key(|id| fallback_speed_rank(id));
     models.dedup();
     Ok(models)
+}
+
+fn fallback_speed_rank(id: &str) -> u64 {
+    let id = id.to_lowercase();
+    if id.contains("haiku")
+        || id.contains("flash")
+        || id.contains("lite")
+        || id.contains("mini")
+        || id.contains("nano")
+    {
+        return 0;
+    }
+    extract_param_b(&id).unwrap_or_else(|| {
+        if id.contains("opus") || id.contains("pro") {
+            10_000
+        } else {
+            5_000
+        }
+    })
+}
+
+fn extract_param_b(id: &str) -> Option<u64> {
+    id.split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
+        .filter_map(|part| {
+            let n: f64 = part.strip_suffix('b')?.parse().ok()?;
+            Some(n.ceil() as u64)
+        })
+        .min()
 }
 
 fn is_free_fallback(id: &str, pricing: &ModelPricing) -> bool {
@@ -360,5 +388,13 @@ mod tests {
     #[test]
     fn rejects_markdown_subject() {
         assert!(validate("### Summary").unwrap_err().contains("markdown"));
+    }
+
+    #[test]
+    fn ranks_smaller_models_first() {
+        assert!(fallback_speed_rank("meta-llama/llama-3.2-3b-instruct:free")
+            < fallback_speed_rank("openai/gpt-oss-20b:free"));
+        assert!(fallback_speed_rank("openai/gpt-oss-20b:free")
+            < fallback_speed_rank("meta-llama/llama-3.3-70b-instruct:free"));
     }
 }
