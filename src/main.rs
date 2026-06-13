@@ -79,6 +79,7 @@ async fn main() -> Result<()> {
         &system,
         &user,
         args.retry_forever,
+        args.retry_forever && args.provider == "openrouter",
     )
     .await?;
     eprintln!("Suggested commit message:\n{message}\n");

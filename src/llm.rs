@@ -1,9 +1,11 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinHandle;
 
 const MAX_SUBJECT_WORDS: usize = 30;
 const MAX_BODY_WORDS: usize = 100;
 const MAX_ATTEMPTS: usize = 3;
+const FALLBACK_TRIES_PER_MODEL: u64 = 3;
 
 #[derive(Serialize)]
 struct ChatRequest {
@@ -34,6 +36,23 @@ struct ResponseMessage {
     content: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ModelsResponse {
+    data: Vec<ModelInfo>,
+}
+
+#[derive(Deserialize)]
+struct ModelInfo {
+    id: String,
+    pricing: ModelPricing,
+}
+
+#[derive(Deserialize)]
+struct ModelPricing {
+    prompt: String,
+    completion: String,
+}
+
 pub async fn generate(
     base_url: &str,
     api_key: &str,
@@ -41,23 +60,64 @@ pub async fn generate(
     system: &str,
     user: &str,
     retry_forever: bool,
+    openrouter_fallbacks: bool,
 ) -> Result<String> {
     let mut user_prompt = user.to_string();
     let mut last_issue = String::new();
     let mut attempt = 0u64;
+    let mut fallback_models: Option<Vec<String>> = None;
+    let mut fallback_fetch: Option<JoinHandle<Result<Vec<String>>>> = None;
+    let mut fallback_index = 0usize;
+    let mut tries_on_fallback = 0u64;
 
     loop {
+        if let Some(handle) = fallback_fetch.as_ref() {
+            if handle.is_finished() {
+                let handle = fallback_fetch.take().unwrap();
+                if let Ok(Ok(models)) = handle.await {
+                    if !models.is_empty() {
+                        eprintln!(
+                            "loaded {} free fallback models (rotate every {FALLBACK_TRIES_PER_MODEL} tries)",
+                            models.len()
+                        );
+                        fallback_models = Some(models);
+                    }
+                }
+            }
+        }
+
         attempt += 1;
         if !retry_forever && attempt > MAX_ATTEMPTS as u64 {
             bail!("failed after {MAX_ATTEMPTS} attempts: {last_issue}");
         }
 
-        let raw = match complete_once(base_url, api_key, model, system, &user_prompt).await {
+        let current_model = fallback_models
+            .as_ref()
+            .filter(|m| !m.is_empty())
+            .map(|m| m[fallback_index % m.len()].clone())
+            .unwrap_or_else(|| model.to_string());
+        let on_primary = fallback_models.is_none();
+
+        let raw = match complete_once(base_url, api_key, &current_model, system, &user_prompt).await
+        {
             Ok(raw) => raw,
             Err(e) => {
                 last_issue = error_summary(&e);
                 if retry_forever {
-                    eprintln!("retry {attempt}: {last_issue}");
+                    if openrouter_fallbacks
+                        && is_rate_limited(&e)
+                        && on_primary
+                        && fallback_fetch.is_none()
+                    {
+                        eprintln!("rate limited; fetching free fallback models...");
+                        let base_url = base_url.to_string();
+                        let api_key = api_key.to_string();
+                        fallback_fetch = Some(tokio::spawn(async move {
+                            fetch_free_fallback_models(&base_url, &api_key).await
+                        }));
+                    }
+                    eprintln!("retry {attempt} ({current_model}): {last_issue}");
+                    rotate_fallback(&fallback_models, &mut fallback_index, &mut tries_on_fallback);
                     continue;
                 }
                 return Err(e);
@@ -65,11 +125,15 @@ pub async fn generate(
         };
 
         match validate(&raw) {
-            Ok(message) => return Ok(message),
+            Ok(message) => {
+                eprintln!("succeeded with model: {current_model}");
+                return Ok(message);
+            }
             Err(issue) => {
                 last_issue = issue.clone();
                 if retry_forever {
-                    eprintln!("retry {attempt}: validation: {issue}");
+                    eprintln!("retry {attempt} ({current_model}): validation: {issue}");
+                    rotate_fallback(&fallback_models, &mut fallback_index, &mut tries_on_fallback);
                 }
                 user_prompt.push_str(&format!(
                     "\n\nPrevious attempt rejected ({issue}). \
@@ -78,6 +142,65 @@ pub async fn generate(
             }
         }
     }
+}
+
+fn rotate_fallback(
+    models: &Option<Vec<String>>,
+    index: &mut usize,
+    tries: &mut u64,
+) {
+    let Some(list) = models.as_ref().filter(|m| !m.is_empty()) else {
+        return;
+    };
+    *tries += 1;
+    if *tries >= FALLBACK_TRIES_PER_MODEL {
+        *tries = 0;
+        *index = (*index + 1) % list.len();
+        eprintln!("rotating to fallback model: {}", list[*index]);
+    }
+}
+
+async fn fetch_free_fallback_models(base_url: &str, api_key: &str) -> Result<Vec<String>> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .context("failed to fetch OpenRouter models")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        bail!("models API error {status}: {body}");
+    }
+
+    let data: ModelsResponse = resp.json().await.context("invalid models response")?;
+    let mut models: Vec<String> = data
+        .data
+        .into_iter()
+        .filter(|m| is_free_fallback(&m.id, &m.pricing))
+        .map(|m| m.id)
+        .collect();
+    models.sort();
+    models.dedup();
+    Ok(models)
+}
+
+fn is_free_fallback(id: &str, pricing: &ModelPricing) -> bool {
+    if pricing.prompt != "0" || pricing.completion != "0" {
+        return false;
+    }
+    let id = id.to_lowercase();
+    id.contains("gemini")
+        || id.contains("claude")
+        || id.starts_with("openai/")
+        || id.starts_with("meta-llama/")
+        || id.starts_with("meta/")
+}
+
+fn is_rate_limited(err: &anyhow::Error) -> bool {
+    err.to_string().contains("rate limited (429)")
 }
 
 fn error_summary(err: &anyhow::Error) -> String {
