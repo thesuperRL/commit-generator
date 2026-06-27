@@ -1,0 +1,52 @@
+---
+description: Use aicommit MCP for all git commits
+alwaysApply: true
+---
+
+# Git Commit with AI Messages
+
+Always use the `aicommit` MCP server when committing changes instead of regular `git commit`.
+
+## MCP Tools Available
+
+- `commit_with_ai_message`: Generate AI commit message and commit immediately
+- `generate_commit_message`: Generate message without committing (for preview)
+
+## Usage
+
+When the user asks to commit changes or when you need to commit:
+
+```typescript
+// Use the aicommit MCP tool
+CallMcpTool({
+  server: "aicommit",
+  toolName: "commit_with_ai_message",
+  arguments: {
+    repo_path: "/path/to/repo",
+    provider: "openrouter",  // or "gemini"
+    include_context: false,   // set true to include previous commit
+    retry_forever: false      // set true to retry on errors
+  }
+})
+```
+
+## Default Behavior
+
+- Always use `commit_with_ai_message` for commits (not `git commit`)
+- Use `repo_path: "."` when committing in the current repo
+- Default provider is `openrouter` (can be changed if requested)
+- Include context (`include_context: true`) only if explicitly requested
+
+## Preview Before Committing
+
+If the user wants to see the message first:
+
+```typescript
+CallMcpTool({
+  server: "aicommit",
+  toolName: "generate_commit_message",
+  arguments: { repo_path: "." }
+})
+```
+
+Then ask for approval before using `commit_with_ai_message`.

@@ -74,3 +74,36 @@ git aicommit -c                # include previous commit as context
 2. Strips lockfiles, binaries, and oversized content
 3. Sends diff + recent commit subjects to the LLM
 4. Opens `git commit -e -F` with the suggested message pre-filled
+
+## MCP Server
+
+This repo includes an MCP server for integrating git-aicommit with Cursor and other MCP clients.
+
+### Setup MCP Server
+
+```bash
+cd mcp
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "aicommit": {
+      "command": "/Users/YOUR_USERNAME/path/to/commit-generator/mcp/.venv/bin/python",
+      "args": ["-m", "aicommit_mcp.server"]
+    }
+  }
+}
+```
+
+### MCP Tools
+
+- `generate_commit_message`: Generate AI commit message without committing (preview)
+- `commit_with_ai_message`: Generate and commit immediately
+
+The MCP server is automatically used by Cursor when committing changes if the `.cursor/rules/use-aicommit.mdc` rule is active.

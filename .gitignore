@@ -25,3 +25,8 @@ target
 
 /target
 .env
+
+# MCP server
+mcp/.venv
+mcp/__pycache__
+mcp/*.egg-info
